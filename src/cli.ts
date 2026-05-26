@@ -101,6 +101,11 @@ const initModelOption = Options.text("model").pipe(
   Options.optional,
 );
 
+const sandboxOption = Options.text("sandbox").pipe(
+  Options.withDescription("Sandbox provider to use (e.g. docker, podman)"),
+  Options.optional,
+);
+
 const initCommand = Command.make(
   "init",
   {
@@ -108,12 +113,14 @@ const initCommand = Command.make(
     template: templateOption,
     agent: agentOption,
     model: initModelOption,
+    sandbox: sandboxOption,
   },
   ({
     imageName: imageNameFlag,
     template,
     agent: agentFlag,
     model: modelFlag,
+    sandbox: sandboxFlag,
   }) =>
     Effect.gen(function* () {
       const d = yield* Display;
@@ -129,6 +136,20 @@ const initCommand = Command.make(
           yield* Effect.fail(
             new InitError({
               message: `Unknown template "${template.value}". Available: ${names}`,
+            }),
+          );
+        }
+      }
+
+      if (sandboxFlag._tag === "Some") {
+        const valid = getSandboxProvider(sandboxFlag.value);
+        if (!valid) {
+          const names = listSandboxProviders()
+            .map((p) => p.name)
+            .join(", ");
+          yield* Effect.fail(
+            new InitError({
+              message: `Unknown sandbox provider "${sandboxFlag.value}". Available: ${names}`,
             }),
           );
         }
@@ -174,10 +195,12 @@ const initCommand = Command.make(
           ? modelFlag.value
           : selectedAgent.defaultModel;
 
-      // Resolve sandbox provider: interactive select (no default — user must choose)
+      // Resolve sandbox provider: CLI flag > interactive select (no default — user must choose)
       const sandboxProviders = listSandboxProviders();
       let selectedSandboxProvider: SandboxProviderEntry;
-      {
+      if (sandboxFlag._tag === "Some") {
+        selectedSandboxProvider = getSandboxProvider(sandboxFlag.value)!;
+      } else {
         const selected = yield* Effect.promise(() =>
           clack.select({
             message: "Select a sandbox provider:",

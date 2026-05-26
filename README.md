@@ -679,6 +679,7 @@ Scaffolds the `.sandcastle/` config directory and builds the container image. Th
 | `--image-name` | No       | `sandcastle:<repo-dir-name>` | Docker image name                                                    |
 | `--agent`      | No       | Interactive prompt           | Agent to use (`claude-code`, `pi`, `codex`, `opencode`)              |
 | `--model`      | No       | Agent's default model        | Model to use (e.g. `claude-sonnet-4-6`). Defaults to agent's default |
+| `--sandbox`    | No       | Interactive prompt           | Sandbox provider to use (`docker`, `podman`)                         |
 | `--template`   | No       | Interactive prompt           | Template to scaffold (e.g. `blank`, `simple-loop`)                   |
 
 Creates the following files:
