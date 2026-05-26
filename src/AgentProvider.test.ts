@@ -1067,7 +1067,7 @@ describe("opencode factory", () => {
     ]);
   });
 
-  it("parseStreamLine extracts tool call from tool_use (read → filePath)", () => {
+  it("parseStreamLine falls back to JSON.stringify(input) for read (not specially mapped)", () => {
     const provider = opencode("opencode/big-pickle");
     const line = JSON.stringify({
       type: "tool_use",
@@ -1079,11 +1079,11 @@ describe("opencode factory", () => {
       },
     });
     expect(provider.parseStreamLine(line)).toEqual([
-      { type: "tool_call", name: "read", args: "/some/file" },
+      { type: "tool_call", name: "read", args: '{"filePath":"/some/file"}' },
     ]);
   });
 
-  it("parseStreamLine extracts tool call from tool_use (grep → pattern)", () => {
+  it("parseStreamLine falls back to JSON.stringify(input) for grep (not specially mapped)", () => {
     const provider = opencode("opencode/big-pickle");
     const line = JSON.stringify({
       type: "tool_use",
@@ -1095,7 +1095,7 @@ describe("opencode factory", () => {
       },
     });
     expect(provider.parseStreamLine(line)).toEqual([
-      { type: "tool_call", name: "grep", args: "TODO" },
+      { type: "tool_call", name: "grep", args: '{"pattern":"TODO"}' },
     ]);
   });
 

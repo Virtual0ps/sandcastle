@@ -494,11 +494,6 @@ const OPENCODE_TOOL_ARG_FIELDS: Record<string, string> = {
   bash: "command",
   webfetch: "url",
   task: "description",
-  read: "filePath",
-  write: "filePath",
-  edit: "filePath",
-  glob: "pattern",
-  grep: "pattern",
 };
 
 const parseOpenCodeStreamLine = (line: string): ParsedStreamEvent[] => {
