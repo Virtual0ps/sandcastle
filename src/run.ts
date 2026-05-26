@@ -3,6 +3,7 @@ import path, { join } from "node:path";
 import { styleText } from "node:util";
 import { Effect, Layer } from "effect";
 import { resolveCwd } from "./resolveCwd.js";
+import { assertResumeSessionExists } from "./resumePrecheck.js";
 import type { AgentProvider } from "./AgentProvider.js";
 import {
   ClackDisplay,
@@ -398,19 +399,12 @@ export async function run(
 
   // Validate: resumeSession file must exist on the host
   if (options.resumeSession) {
-    if (!provider.sessionStorage) {
-      throw new Error(`${provider.name} does not support resumeSession`);
-    }
-    const hStore = provider.sessionStorage.hostStore(hostRepoDir);
-    const exists = await hStore.exists(options.resumeSession);
-    if (!exists) {
-      const sessionPath = hStore.sessionFilePath(options.resumeSession);
-      throw new Error(
-        sessionPath
-          ? `resumeSession "${options.resumeSession}" not found: expected session file at ${sessionPath}`
-          : `resumeSession "${options.resumeSession}" not found`,
-      );
-    }
+    await assertResumeSessionExists({
+      provider,
+      sandboxTag: options.sandbox.tag,
+      hostRepoDir,
+      resumeSession: options.resumeSession,
+    });
   }
 
   // Resolve prompt

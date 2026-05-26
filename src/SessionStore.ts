@@ -26,6 +26,19 @@ import type { BindMountSandboxHandle } from "./SandboxProvider.js";
 // SessionStore interface
 // ---------------------------------------------------------------------------
 
+/**
+ * Result of locating a session on the host by its unique id, independent of any
+ * cwd-derived path encoding.
+ */
+export interface HostSessionLookup {
+  /** Absolute path to the located session file, or `undefined` when no session
+   *  with this id exists anywhere under the searched root. */
+  readonly path: string | undefined;
+  /** The host directory that was scanned — surfaced in not-found errors so the
+   *  user knows where Sandcastle looked. */
+  readonly searchedRoot: string;
+}
+
 /** A keyed collection of agent session JSONLs associated with a cwd. */
 export interface SessionStore {
   /** The working directory this store is associated with. */
@@ -96,6 +109,38 @@ export const hostSessionStore = (
       await writeFile(join(projectDir, `${id}.jsonl`), content);
     },
   };
+};
+
+/**
+ * Locate a Claude Code session JSONL on the host by its unique id, scanning each
+ * `~/.claude/projects/<encoded-cwd>/` directory rather than reconstructing the
+ * cwd encoding. The session id is globally unique, so the first match wins. Used
+ * by the no-sandbox resume precheck, where the agent wrote the file in place
+ * under a cwd-derived directory Sandcastle cannot reliably reconstruct.
+ *
+ * @param id - The session id (file basename without `.jsonl`).
+ * @param projectsDir - Override for the projects directory (default: `~/.claude/projects`).
+ */
+export const findClaudeSessionOnHost = async (
+  id: string,
+  projectsDir?: string,
+): Promise<HostSessionLookup> => {
+  const root =
+    projectsDir ?? join(process.env.HOME ?? "~", ".claude", "projects");
+  let entries;
+  try {
+    entries = await readdir(root, { withFileTypes: true });
+  } catch {
+    return { path: undefined, searchedRoot: root };
+  }
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const candidate = join(root, entry.name, `${id}.jsonl`);
+    if (await pathExists(candidate)) {
+      return { path: candidate, searchedRoot: root };
+    }
+  }
+  return { path: undefined, searchedRoot: root };
 };
 
 // ---------------------------------------------------------------------------
@@ -239,6 +284,23 @@ const findCodexSessionPath = async (
   };
 
   return visit(rootDir);
+};
+
+/**
+ * Locate a Codex session rollout file on the host by its id, reusing the
+ * date-nested scan. Used by the no-sandbox resume precheck.
+ *
+ * @param id - The session id.
+ * @param sessionsDir - Override for the sessions directory (default: `~/.codex/sessions`).
+ */
+export const findCodexSessionOnHost = async (
+  id: string,
+  sessionsDir?: string,
+): Promise<HostSessionLookup> => {
+  const root =
+    sessionsDir ?? join(process.env.HOME ?? "~", ".codex", "sessions");
+  const path = await findCodexSessionPath(root, id);
+  return { path, searchedRoot: root };
 };
 
 export const codexHostSessionStore = (

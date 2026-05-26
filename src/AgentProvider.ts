@@ -1,10 +1,13 @@
 import {
   codexHostSessionStore,
   codexSandboxSessionStore,
+  findClaudeSessionOnHost,
+  findCodexSessionOnHost,
   hostSessionStore,
   sandboxSessionStore,
   transferClaudeSession,
   transferCodexSession,
+  type HostSessionLookup,
   type LocatableSessionStore,
   type SessionStore,
 } from "./SessionStore.js";
@@ -205,6 +208,14 @@ export interface AgentSessionStorage {
   hostStore(cwd: string): SessionStore;
   sandboxStore(cwd: string, handle: BindMountSandboxHandle): SessionStore;
   transfer(from: SessionStore, to: SessionStore, id: string): Promise<void>;
+  /**
+   * Locate a session on the host by its unique id, independent of cwd encoding.
+   * Used by the no-sandbox resume precheck, where the agent runs on the host and
+   * writes the session in place under a cwd-derived directory Sandcastle cannot
+   * reliably reconstruct. Returns the located path (or `undefined`) plus the
+   * directory that was searched (for not-found errors).
+   */
+  findByIdOnHost(id: string): Promise<HostSessionLookup>;
 }
 
 export interface AgentProvider {
@@ -405,6 +416,8 @@ export const codex = (
         to as LocatableSessionStore,
         id,
       ),
+    findByIdOnHost: (id) =>
+      findCodexSessionOnHost(id, options?.sessionStorage?.hostSessionsDir),
   },
 
   buildPrintCommand({
@@ -640,6 +653,8 @@ export const claudeCode = (
           "/home/agent/.claude/projects",
       ),
     transfer: transferClaudeSession,
+    findByIdOnHost: (id) =>
+      findClaudeSessionOnHost(id, options?.sessionStorage?.hostProjectsDir),
   },
 
   buildPrintCommand({

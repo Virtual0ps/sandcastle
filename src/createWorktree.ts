@@ -42,6 +42,7 @@ import { syncOut } from "./syncOut.js";
 import * as WorktreeManager from "./WorktreeManager.js";
 import { copyToWorktree } from "./CopyToWorktree.js";
 import { resolveCwd } from "./resolveCwd.js";
+import { assertResumeSessionExists } from "./resumePrecheck.js";
 import {
   type PromptArgs,
   substitutePromptArgs,
@@ -485,19 +486,12 @@ export const createWorktree = async (
     }
 
     if (opts.resumeSession) {
-      if (!provider.sessionStorage) {
-        throw new Error(`${provider.name} does not support resumeSession`);
-      }
-      const hStore = provider.sessionStorage.hostStore(hostRepoDir);
-      const exists = await hStore.exists(opts.resumeSession);
-      if (!exists) {
-        const sessionPath = hStore.sessionFilePath(opts.resumeSession);
-        throw new Error(
-          sessionPath
-            ? `resumeSession "${opts.resumeSession}" not found: expected session file at ${sessionPath}`
-            : `resumeSession "${opts.resumeSession}" not found`,
-        );
-      }
+      await assertResumeSessionExists({
+        provider,
+        sandboxTag: sandboxProvider.tag,
+        hostRepoDir,
+        resumeSession: opts.resumeSession,
+      });
     }
 
     const inner = Effect.gen(function* () {

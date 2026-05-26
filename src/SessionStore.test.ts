@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   type SessionStore,
   encodeProjectPath,
+  findClaudeSessionOnHost,
+  findCodexSessionOnHost,
   hostSessionStore,
   sandboxSessionStore,
   transferClaudeSession,
@@ -271,6 +273,93 @@ describe("hostSessionStore", () => {
       expect(await store.exists("s1")).toBe(true);
     } finally {
       await teardown();
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// findClaudeSessionOnHost — locate by id across encoded project dirs
+// ---------------------------------------------------------------------------
+
+describe("findClaudeSessionOnHost", () => {
+  it("finds a session by id regardless of which encoded project dir holds it", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "sandcastle-find-claude-"));
+    try {
+      const id = "session-xyz";
+      // A directory name that no host-repo-dir encoding would reconstruct
+      // (mimics a realpath'd worktree path with `.`→`-` applied by the agent).
+      const projectDir = join(
+        dir,
+        "-private-tmp-myrepo--sandcastle-worktrees-feature",
+      );
+      await mkdir(projectDir, { recursive: true });
+      await writeFile(join(projectDir, `${id}.jsonl`), "{}");
+
+      const result = await findClaudeSessionOnHost(id, dir);
+
+      expect(result.path).toBe(join(projectDir, `${id}.jsonl`));
+      expect(result.searchedRoot).toBe(dir);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("returns undefined path and names the searched root when absent", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "sandcastle-find-claude-"));
+    try {
+      const result = await findClaudeSessionOnHost("nope", dir);
+      expect(result.path).toBeUndefined();
+      expect(result.searchedRoot).toBe(dir);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("returns undefined path when the projects dir does not exist", async () => {
+    const result = await findClaudeSessionOnHost(
+      "nope",
+      join(tmpdir(), "sandcastle-does-not-exist-xyz"),
+    );
+    expect(result.path).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// findCodexSessionOnHost — locate rollout file by id
+// ---------------------------------------------------------------------------
+
+describe("findCodexSessionOnHost", () => {
+  it("finds a date-nested rollout file by id", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "sandcastle-find-codex-"));
+    try {
+      const id = "9ba1c695-2222-4444-8888-e7e847bf34dd";
+      const sessionPath = join(
+        dir,
+        "2026",
+        "05",
+        "26",
+        `rollout-2026-05-26T08-00-00-${id}.jsonl`,
+      );
+      await mkdir(join(sessionPath, ".."), { recursive: true });
+      await writeFile(sessionPath, "{}");
+
+      const result = await findCodexSessionOnHost(id, dir);
+
+      expect(result.path).toBe(sessionPath);
+      expect(result.searchedRoot).toBe(dir);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("returns undefined path and names the searched root when absent", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "sandcastle-find-codex-"));
+    try {
+      const result = await findCodexSessionOnHost("missing", dir);
+      expect(result.path).toBeUndefined();
+      expect(result.searchedRoot).toBe(dir);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
     }
   });
 });
