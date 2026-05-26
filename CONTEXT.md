@@ -87,7 +87,7 @@ A single invocation of the **agent** inside the **sandbox**, producing at most o
 _Avoid_: "run" (ambiguous with the JS `run()` function), "cycle", "loop"
 
 **Task**:
-A work item from the **backlog manager** that the **agent** selects and works on during an **iteration**.
+A work item from the **issue tracker** that the **agent** selects and works on during an **iteration**.
 _Avoid_: "job", "work item", "ticket"
 
 **Completion signal**:
@@ -156,9 +156,9 @@ _Avoid_: "create", "bootstrap", "new"
 The `.sandcastle/` directory in a **host** repo containing sandbox configuration.
 _Avoid_: ".sandcastle folder", "sandcastle dir"
 
-**Backlog manager**:
-A pluggable source of **tasks** for the **agent**, selected during **init** (e.g. GitHub Issues, Beads).
-_Avoid_: "task source", "issue tracker"
+**Issue tracker**:
+A pluggable source of **tasks** for the **agent**, selected during **init** (e.g. GitHub Issues, Beads). Used loosely -- Beads is a dependency-aware task tracker rather than a literal issue tracker, but "issue tracker" is the umbrella term.
+_Avoid_: "backlog manager" (retired name), "task source"
 
 **Template argument**:
 A named `{{KEY}}` placeholder in a scaffold template (Dockerfile, prompt `.md` file) that **init** replaces with a value derived from the user's choices.
@@ -215,10 +215,10 @@ _Avoid_: "log event" (the log file contains more than just agent output), "displ
 - **Host hooks** run on the **host**; **sandbox hooks** run inside the **sandbox**. Hooks are grouped under `host` and `sandbox` in the `hooks` option
 - Lifecycle ordering: `copyToWorktree` -> `host.onWorktreeReady` (sequential) -> sandbox created -> `host.onSandboxReady` + `sandbox.onSandboxReady` (parallel)
 - Each **iteration** may produce one or more commits; iterations repeat until the **completion signal** fires or the max count is reached
-- **Init** creates the **config directory** on the **host**, prompting the user to select an **agent** and **backlog manager**
+- **Init** creates the **config directory** on the **host**, prompting the user to select an **agent** and **issue tracker**
 - **Init** performs **template argument substitution** on Dockerfiles and scaffold `.md` files, replacing **template arguments** with values derived from the user's choices
-- Each **backlog manager** declares a Dockerfile snippet (installed via **template argument substitution**) and command placeholders for **prompt** templates
-- The **agent**'s Dockerfile template contains **template arguments** (e.g. `{{BACKLOG_MANAGER_TOOLS}}`) that **init** fills in based on the selected **backlog manager**
+- Each **issue tracker** declares a Dockerfile snippet (installed via **template argument substitution**) and command placeholders for **prompt** templates
+- The **agent**'s Dockerfile template contains **template arguments** (e.g. `{{ISSUE_TRACKER_TOOLS}}`) that **init** fills in based on the selected **issue tracker**
 - **Build-image** and **remove-image** are namespaced under their provider in the CLI (e.g. `sandcastle docker build-image`)
 - The **agent provider** is selected via the `agent` field in config or `--agent` CLI flag
 - At launch, Sandcastle resolves env vars from **config directory** `.env` and `process.env`, then passes the full env map into the **sandbox**
@@ -328,3 +328,5 @@ _Avoid_: "log event" (the log file contains more than just agent output), "displ
 - **"No sandbox"** vs **"local"** vs **"none"** -- The provider type is `NoSandboxProvider`, the factory is `noSandbox()`, the tag is `"none"`. Say **no-sandbox provider** in prose.
 - **"Workspace"** -- Retired term. Use **worktree** for the git worktree on the **host**, and **sandbox** for the isolation boundary. Don't say "workspace" in this project.
 - **"Interactive mode"** -- Could mean `interactive()` (Sandcastle's function) or Claude Code's TUI. In this project, it means Sandcastle's `interactive()`. Don't confuse with **terminal mode**.
+- **"Backlog manager"** -- Retired name for **issue tracker**. The code identifiers, CLI prompt text, and `{{ISSUE_TRACKER_TOOLS}}` placeholder all use "issue tracker" now.
+- **"Issue tracker"** (concept) vs `docs/agents/issue-tracker.md` -- The glossary term is the pluggable **task** source selected during **init**. The doc describes _this repo's own_ GitHub issues for agents working on Sandcastle. Different things.
