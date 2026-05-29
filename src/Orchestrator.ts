@@ -30,6 +30,7 @@ const invokeAgent = (
   onIdleWarning: (minutes: number) => void,
   idleWarningIntervalMs: number = IDLE_WARNING_INTERVAL_MS,
   resumeSession?: string,
+  forkSession?: boolean,
   signal?: AbortSignal,
 ): Effect.Effect<
   { result: string; sessionId?: string; usage?: IterationUsage },
@@ -98,6 +99,7 @@ const invokeAgent = (
         prompt,
         dangerouslySkipPermissions: true,
         resumeSession,
+        forkSession,
       });
       const execResult = yield* sandbox.exec(printCmd.command, {
         onLine: (line) => {
@@ -190,6 +192,12 @@ export interface OrchestrateOptions {
   readonly _idleWarningIntervalMs?: number;
   /** Resume a prior Claude Code session by ID. Applied to iteration 1 only. */
   readonly resumeSession?: string;
+  /**
+   * When true alongside `resumeSession`, fork the session instead of mutating
+   * it — the parent JSONL stays intact and the agent writes a new session
+   * under a fresh id. Applied to iteration 1 only. See ADR 0018.
+   */
+  readonly forkSession?: boolean;
   /** An AbortSignal that cancels the orchestration when aborted. */
   readonly signal?: AbortSignal;
   /** When true, skip prompt expansion (shell expression evaluation). Set for dynamic inline prompts. */
@@ -284,6 +292,8 @@ export const orchestrate = (
                 // Resume session: transfer JSONL from host to sandbox before iteration 1
                 const iterationResumeSession =
                   i === 1 ? options.resumeSession : undefined;
+                const iterationForkSession =
+                  i === 1 ? options.forkSession : undefined;
                 if (
                   iterationResumeSession &&
                   bindMountHandle &&
@@ -369,6 +379,7 @@ export const orchestrate = (
                   onIdleWarning,
                   options._idleWarningIntervalMs,
                   iterationResumeSession,
+                  iterationForkSession,
                   options.signal,
                 );
 

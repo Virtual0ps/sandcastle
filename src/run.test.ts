@@ -224,6 +224,25 @@ describe("RunResult", () => {
     };
     expect(result.iterations[0]!.sessionFilePath).toBeUndefined();
   });
+
+  it("allows fork as an optional sibling of resume on the type", () => {
+    // Compile-time shape check: fork takes (prompt, options?) and returns
+    // Promise<RunResult>, matching resume. Mirrors ADR 0018.
+    const result: RunResult = {
+      iterations: [{ sessionId: "abc-123" }],
+      completionSignal: undefined,
+      stdout: "",
+      commits: [],
+      branch: "main",
+      fork: async () => ({
+        iterations: [],
+        stdout: "",
+        commits: [],
+        branch: "main",
+      }),
+    };
+    expect(typeof result.fork).toBe("function");
+  });
 });
 
 describe("DEFAULT_MAX_ITERATIONS", () => {
@@ -428,6 +447,23 @@ describe("resumeSession validation", () => {
         resumeSession: "abc-123",
       }),
     ).rejects.toThrow('resumeSession "abc-123" not found');
+  });
+});
+
+describe("forkSession validation", () => {
+  it("throws when forkSession is set without resumeSession", async () => {
+    await expect(
+      run({
+        agent: claudeCode("claude-opus-4-7"),
+        sandbox: testSandbox,
+        prompt: "test",
+        branchStrategy: { type: "head" },
+        // forkSession is @internal; the user-facing surface is RunResult.fork().
+        // This guard exists so a caller setting the internal flag directly gets
+        // a clear error instead of a silently-ignored fork flag.
+        forkSession: true,
+      } as RunOptions),
+    ).rejects.toThrow("forkSession requires resumeSession");
   });
 });
 

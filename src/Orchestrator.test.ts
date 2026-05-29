@@ -3361,6 +3361,174 @@ describe("Session capture integration", () => {
     expect(entry.cwd).toBe(hostDir);
   });
 
+  it("forks a session: passes --fork-session alongside --resume to claude", async () => {
+    const hostDir = await mkdtemp(join(tmpdir(), "orch-fork-host-"));
+    const hostProjectsDir = await mkdtemp(
+      join(tmpdir(), "orch-fork-projects-"),
+    );
+    const sandboxProjectsDir = await mkdtemp(
+      join(tmpdir(), "orch-fork-sb-projects-"),
+    );
+    const provider = claudeCode("test-model", {
+      sessionStorage: { hostProjectsDir, sandboxProjectsDir },
+    });
+    const parentSessionId = "parent-session-xyz";
+    const childSessionId = "child-session-abc";
+
+    await initRepo(hostDir);
+    await commitFile(hostDir, "hello.txt", "hello", "initial commit");
+
+    // Seed a parent session JSONL on the host so resumeIntoSandbox can transfer it.
+    const encoded = encodeProjectPath(hostDir);
+    const hostSessionsDir = join(hostProjectsDir, encoded);
+    await mkdir(hostSessionsDir, { recursive: true });
+    const parentSessionPath = join(hostSessionsDir, `${parentSessionId}.jsonl`);
+    const parentContent = [
+      JSON.stringify({ type: "system", cwd: hostDir }),
+      JSON.stringify({ type: "message", cwd: hostDir, text: "parent work" }),
+    ].join("\n");
+    await writeFile(parentSessionPath, parentContent);
+
+    // Custom factory that captures the agent command so we can assert on it.
+    // Mirrors makeSessionCaptureFactory but threads a capturedCommand back out.
+    const sandboxBaseDir = join(tmpdir(), `orch-fork-sandbox-${randomUUID()}`);
+    let capturedCommand = "";
+
+    const factoryLayer = Layer.succeed(SandboxFactory, {
+      withSandbox: <A, E, R>(
+        makeEffect: (
+          info: import("./SandboxFactory.js").SandboxInfo,
+          sandbox: SandboxService,
+        ) => Effect.Effect<A, E, R>,
+      ): Effect.Effect<
+        import("./SandboxFactory.js").WithSandboxResult<A>,
+        E | DockerError,
+        R
+      > =>
+        Effect.acquireUseRelease(
+          Effect.promise(async () => {
+            await rm(sandboxBaseDir, { recursive: true, force: true });
+            await execAsync(
+              `git worktree add -b "sandcastle/fork-test" "${sandboxBaseDir}" HEAD`,
+              { cwd: hostDir },
+            );
+          }),
+          () => {
+            const handle: BindMountSandboxHandle = {
+              worktreePath: sandboxBaseDir,
+              exec: async () => ({ stdout: "", stderr: "", exitCode: 0 }),
+              copyFileIn: async (hostPath, sandboxPath) => {
+                await mkdir(join(sandboxPath, ".."), { recursive: true });
+                await copyFile(hostPath, sandboxPath);
+              },
+              copyFileOut: async (sandboxPath, hostPath) => {
+                await mkdir(join(hostPath, ".."), { recursive: true });
+                await copyFile(sandboxPath, hostPath);
+              },
+              close: async () => {},
+            };
+
+            const real = makeLocalSandbox(sandboxBaseDir);
+            const sandbox: SandboxService = {
+              exec: (command, options) => {
+                if (command.startsWith("claude ") && options?.onLine) {
+                  capturedCommand = command;
+                  const onLine = options.onLine;
+                  return Effect.gen(function* () {
+                    // Emulate a fork: agent writes a NEW session JSONL under
+                    // a fresh session id, leaving the parent untouched.
+                    const cwd = options?.cwd ?? sandboxBaseDir;
+                    const sbEncoded = encodeProjectPath(cwd);
+                    const sessionsDir = join(sandboxProjectsDir, sbEncoded);
+                    yield* Effect.promise(() =>
+                      mkdir(sessionsDir, { recursive: true }),
+                    );
+                    yield* Effect.promise(() =>
+                      writeFile(
+                        join(sessionsDir, `${childSessionId}.jsonl`),
+                        [
+                          JSON.stringify({ type: "system", cwd }),
+                          JSON.stringify({
+                            type: "message",
+                            cwd,
+                            text: "forked work",
+                          }),
+                        ].join("\n"),
+                      ),
+                    );
+                    const streamOutput = toStreamJson(
+                      "Done. <promise>COMPLETE</promise>",
+                      childSessionId,
+                    );
+                    for (const line of streamOutput.split("\n")) {
+                      onLine(line);
+                    }
+                    return {
+                      stdout: streamOutput,
+                      stderr: "",
+                      exitCode: 0,
+                    };
+                  });
+                }
+                return real.exec(command, options);
+              },
+              copyIn: (hostPath, sandboxPath) =>
+                real.copyIn(hostPath, sandboxPath),
+              copyFileOut: (sandboxPath, hostPath) =>
+                real.copyFileOut(sandboxPath, hostPath),
+            };
+
+            return makeEffect(
+              {
+                hostWorktreePath: sandboxBaseDir,
+                sandboxRepoPath: sandboxBaseDir,
+                applyToHost: () => Effect.void,
+                bindMountHandle: handle,
+              },
+              sandbox,
+            ) as Effect.Effect<A, E | DockerError, R>;
+          },
+          () =>
+            Effect.promise(async () => {
+              await execAsync(
+                `git worktree remove "${sandboxBaseDir}" --force`,
+                { cwd: hostDir },
+              ).catch(() => {});
+            }),
+        ).pipe(
+          Effect.map((value) => ({ value, preservedWorktreePath: undefined })),
+        ),
+    });
+
+    const result = await Effect.runPromise(
+      orchestrate({
+        provider,
+        hostRepoDir: hostDir,
+        iterations: 1,
+        prompt: "branch off",
+        resumeSession: parentSessionId,
+        forkSession: true,
+      }).pipe(Effect.provide(Layer.merge(factoryLayer, testDisplayLayer))),
+    );
+
+    // The agent command should include both --resume <parent> and --fork-session.
+    expect(capturedCommand).toContain(`--resume '${parentSessionId}'`);
+    expect(capturedCommand).toContain("--fork-session");
+
+    // The iteration captured the CHILD session id, not the parent.
+    expect(result.iterations[0]!.sessionId).toBe(childSessionId);
+
+    // The parent JSONL on the host is untouched — fork must not overwrite it.
+    const parentAfter = await readFile(parentSessionPath, "utf-8");
+    expect(parentAfter).toBe(parentContent);
+
+    // A child session file was captured to the host under the child id.
+    const childCaptured = result.iterations[0]!.sessionFilePath!;
+    expect(childCaptured).toContain(`${childSessionId}.jsonl`);
+    const childContent = await readFile(childCaptured, "utf-8");
+    expect(childContent).toContain("forked work");
+  });
+
   it("populates usage on IterationResult when session has assistant usage", async () => {
     const hostDir = await mkdtemp(join(tmpdir(), "orch-usage-host-"));
     const hostProjectsDir = await mkdtemp(

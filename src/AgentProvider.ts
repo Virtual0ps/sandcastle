@@ -197,6 +197,13 @@ export interface AgentCommandOptions {
   readonly dangerouslySkipPermissions: boolean;
   /** When set, the agent should resume the given session ID instead of starting fresh. */
   readonly resumeSession?: string;
+  /**
+   * When true alongside `resumeSession`, the agent should fork the session
+   * instead of mutating it — Claude's `--fork-session`, Codex's
+   * `codex exec fork`. The parent session JSONL is left intact and the agent
+   * writes a new session under a fresh id.
+   */
+  readonly forkSession?: boolean;
 }
 
 /** Return type of buildPrintCommand — command string plus optional stdin content.
@@ -610,13 +617,22 @@ export const codex = (
   buildPrintCommand({
     prompt,
     resumeSession,
+    forkSession,
   }: AgentCommandOptions): PrintCommand {
     const effortFlag = options?.effort
       ? ` -c ${shellEscape(`model_reasoning_effort="${options.effort}"`)}`
       : "";
-    const base = resumeSession
-      ? `codex exec resume ${shellEscape(resumeSession)}`
-      : "codex exec";
+    // Codex distinguishes fork from resume at the verb level — `codex exec
+    // fork <id>` leaves the parent rollout intact; `codex exec resume <id>`
+    // appends to it. See ADR 0018.
+    let base: string;
+    if (resumeSession && forkSession) {
+      base = `codex exec fork ${shellEscape(resumeSession)}`;
+    } else if (resumeSession) {
+      base = `codex exec resume ${shellEscape(resumeSession)}`;
+    } else {
+      base = "codex exec";
+    }
     const stdinArg = resumeSession ? " -" : "";
     return {
       command: `${base} --json --dangerously-bypass-approvals-and-sandbox -m ${shellEscape(model)}${effortFlag}${stdinArg}`,
@@ -986,6 +1002,7 @@ export const claudeCode = (
     prompt,
     dangerouslySkipPermissions,
     resumeSession,
+    forkSession,
   }: AgentCommandOptions): PrintCommand {
     const skipPerms = dangerouslySkipPermissions
       ? " --dangerously-skip-permissions"
@@ -994,8 +1011,12 @@ export const claudeCode = (
     const resumeFlag = resumeSession
       ? ` --resume ${shellEscape(resumeSession)}`
       : "";
+    // --fork-session is meaningful only alongside --resume; it tells Claude
+    // to write the continuation as a new session rather than mutating the
+    // resumed one. See ADR 0018.
+    const forkFlag = resumeSession && forkSession ? " --fork-session" : "";
     return {
-      command: `claude --print --verbose${skipPerms} --output-format stream-json --model ${shellEscape(model)}${effortFlag}${resumeFlag} -p -`,
+      command: `claude --print --verbose${skipPerms} --output-format stream-json --model ${shellEscape(model)}${effortFlag}${resumeFlag}${forkFlag} -p -`,
       stdin: prompt,
     };
   },

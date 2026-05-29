@@ -254,6 +254,15 @@ export interface RunOptions<A extends AgentProvider = AgentProvider> {
   /** Resume a prior Claude Code session by ID. The session JSONL must exist on the host. Incompatible with maxIterations > 1. */
   readonly resumeSession?: string;
   /**
+   * When true alongside `resumeSession`, fork the session instead of mutating
+   * it. The parent session JSONL is left intact and the agent writes a new
+   * session under a fresh id. Exposed as the public `.fork()` method on
+   * `RunResult` rather than as a stand-alone caller option — see ADR 0018.
+   *
+   * @internal
+   */
+  readonly forkSession?: boolean;
+  /**
    * An `AbortSignal` that cancels the run when aborted.
    *
    * - If `signal.aborted` is already `true` at entry, `run()` rejects
@@ -293,6 +302,7 @@ export type ResumeRunResultOptions = Omit<
   | "prompt"
   | "promptFile"
   | "resumeSession"
+  | "forkSession"
   | "maxIterations"
 >;
 
@@ -314,6 +324,22 @@ export interface RunResult {
   /** Continue the last captured agent session for exactly one iteration.
    *  Present only when the provider supports resume (`sessionStorage` populated). */
   readonly resume?: (
+    prompt: string,
+    options?: ResumeRunResultOptions,
+  ) => Promise<RunResult>;
+  /**
+   * Fork the last captured agent session for exactly one iteration: the
+   * parent session JSONL is left intact and the child run gets its own
+   * session id, enabling fan-out patterns where multiple children diverge
+   * from a single parent. Present only when the provider supports resume
+   * (`sessionStorage` populated).
+   *
+   * Sessions only: fork isolates the agent session, not the branch or
+   * sandbox. Safe concurrent fan-out (`Promise.all([r.fork(a), r.fork(b)])`)
+   * requires the caller to give each fork a distinct `branch` — `head` and
+   * `merge-to-head` are not safe for concurrent forks. See ADR 0018.
+   */
+  readonly fork?: (
     prompt: string,
     options?: ResumeRunResultOptions,
   ) => Promise<RunResult>;
@@ -377,6 +403,15 @@ export async function run(
     throw new Error(
       "resumeSession cannot be combined with maxIterations > 1. " +
         "Resume applies to iteration 1 only; multi-iteration resume semantics are not supported.",
+    );
+  }
+
+  // Validate: forkSession only makes sense alongside resumeSession.
+  // It is wired internally by RunResult.fork() and never set on its own.
+  if (options.forkSession && !options.resumeSession) {
+    throw new Error(
+      "forkSession requires resumeSession. " +
+        "Use RunResult.fork(prompt) to fork the last captured session.",
     );
   }
 
@@ -564,6 +599,7 @@ export async function run(
       idleTimeoutSeconds: options.idleTimeoutSeconds,
       name: options.name,
       resumeSession: options.resumeSession,
+      forkSession: options.forkSession,
       signal: options.signal,
       skipPromptExpansion: isInlinePrompt,
       timeouts: options.timeouts,
@@ -630,6 +666,24 @@ export async function run(
         promptFile: undefined,
         maxIterations: 1,
         resumeSession: lastIteration.sessionId,
+      });
+    },
+    fork: async (
+      prompt: string,
+      forkOptions?: ResumeRunResultOptions,
+    ): Promise<RunResult> => {
+      const lastIteration = result.iterations.at(-1);
+      if (!lastIteration?.sessionId) {
+        throw new Error("Cannot fork: no sessionId was captured");
+      }
+      return run({
+        ...options,
+        ...forkOptions,
+        prompt,
+        promptFile: undefined,
+        maxIterations: 1,
+        resumeSession: lastIteration.sessionId,
+        forkSession: true,
       });
     },
   };

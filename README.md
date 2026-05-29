@@ -832,6 +832,33 @@ Constraints:
 - Only iteration 1 receives the resume flag; subsequent iterations (if any) start fresh.
 - Providers without resume support reject `resumeSession`.
 
+### Session fork
+
+`RunResult.fork(prompt, options?)` is the sibling of `.resume()`: it continues from the last captured session but leaves the parent session JSONL untouched and writes the child under a new session id. The mechanism is the agent's native fork flag — `claude --resume <id> --fork-session` for Claude Code, `codex exec fork <id>` for Codex.
+
+Fork enables fan-out workflows where a single parent run is the starting point for several independent children:
+
+```typescript
+const parent = await run({
+  agent: claudeCode("claude-opus-4-7"),
+  sandbox: docker(),
+  prompt: "Read the codebase and summarise the data model",
+});
+
+const [reviewA, reviewB] = await Promise.all([
+  parent.fork?.("Review the migration plan", {
+    branchStrategy: { type: "branch", branch: "review-a" },
+  }),
+  parent.fork?.("Audit the auth layer", {
+    branchStrategy: { type: "branch", branch: "review-b" },
+  }),
+]);
+```
+
+**Fork is session-only.** `--fork-session` and `codex exec fork` isolate the agent session JSONL — they do **not** isolate the branch, worktree, or sandbox. Safe concurrent fan-out (`Promise.all([r.fork(a), r.fork(b)])`) requires the caller to give each child a distinct `branch` via `branchStrategy: { type: "branch", branch: "..." }`. The default `head` and `merge-to-head` strategies are **not** safe for concurrent forks: `head` shares the host working directory across all children, and `merge-to-head` races `git merge` against the same HEAD. See [ADR 0018](docs/adr/0018-fork-is-session-only.md).
+
+`fork` is present only on results from providers with `sessionStorage` (Claude Code, Codex) — hence the optional-chaining call. The same single-iteration and session-file constraints as `.resume()` apply.
+
 ### `ClaudeCodeOptions`
 
 The `claudeCode()` factory accepts an optional second argument for provider-specific options:

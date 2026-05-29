@@ -213,6 +213,43 @@ describe("claudeCode factory", () => {
     expect(command).not.toContain("--resume");
   });
 
+  it("buildPrintCommand appends --fork-session when resumeSession + forkSession are set", () => {
+    const provider = claudeCode("claude-opus-4-7");
+    const { command } = provider.buildPrintCommand({
+      prompt: "test",
+      dangerouslySkipPermissions: true,
+      resumeSession: "abc-123",
+      forkSession: true,
+    });
+    expect(command).toContain("--resume 'abc-123'");
+    expect(command).toContain("--fork-session");
+  });
+
+  it("buildPrintCommand omits --fork-session when forkSession is set without resumeSession", () => {
+    // RunOptions validation rejects this combination, but buildPrintCommand
+    // is permissive and should simply not emit a meaningless flag.
+    const provider = claudeCode("claude-opus-4-7");
+    const { command } = provider.buildPrintCommand({
+      prompt: "test",
+      dangerouslySkipPermissions: true,
+      forkSession: true,
+    });
+    expect(command).not.toContain("--fork-session");
+    expect(command).not.toContain("--resume");
+  });
+
+  it("buildPrintCommand omits --fork-session when forkSession is false", () => {
+    const provider = claudeCode("claude-opus-4-7");
+    const { command } = provider.buildPrintCommand({
+      prompt: "test",
+      dangerouslySkipPermissions: true,
+      resumeSession: "abc-123",
+      forkSession: false,
+    });
+    expect(command).toContain("--resume 'abc-123'");
+    expect(command).not.toContain("--fork-session");
+  });
+
   it("buildPrintCommand omits --dangerously-skip-permissions when false", () => {
     const provider = claudeCode("claude-opus-4-7");
     const { command } = provider.buildPrintCommand({
@@ -534,6 +571,46 @@ describe("codex factory", () => {
     expect(command).toContain(`-c 'model_reasoning_effort="high"'`);
     expect(command.endsWith(" -")).toBe(true);
     expect(stdin).toBe("continue");
+  });
+
+  it("buildPrintCommand uses `codex exec fork` when resumeSession + forkSession are set", () => {
+    const provider = codex("gpt-5.4-mini", { effort: "high" });
+    const { command, stdin } = provider.buildPrintCommand({
+      prompt: "branch off",
+      dangerouslySkipPermissions: true,
+      resumeSession: "abc-123",
+      forkSession: true,
+    });
+    expect(command).toContain("codex exec fork 'abc-123'");
+    expect(command).not.toContain("codex exec resume");
+    expect(command).toContain("--json");
+    expect(command).toContain("-m 'gpt-5.4-mini'");
+    expect(command.endsWith(" -")).toBe(true);
+    expect(stdin).toBe("branch off");
+  });
+
+  it("buildPrintCommand stays on `codex exec resume` when forkSession is false", () => {
+    const provider = codex("gpt-5.4-mini");
+    const { command } = provider.buildPrintCommand({
+      prompt: "continue",
+      dangerouslySkipPermissions: true,
+      resumeSession: "abc-123",
+      forkSession: false,
+    });
+    expect(command).toContain("codex exec resume 'abc-123'");
+    expect(command).not.toContain("codex exec fork");
+  });
+
+  it("buildPrintCommand ignores forkSession without resumeSession", () => {
+    const provider = codex("gpt-5.4-mini");
+    const { command } = provider.buildPrintCommand({
+      prompt: "fresh start",
+      dangerouslySkipPermissions: true,
+      forkSession: true,
+    });
+    expect(command).toContain("codex exec --json");
+    expect(command).not.toContain("codex exec fork");
+    expect(command).not.toContain("codex exec resume");
   });
 
   it("buildPrintCommand omits model reasoning effort config when not specified", () => {

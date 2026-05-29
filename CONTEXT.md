@@ -182,6 +182,14 @@ _Avoid_: "cleanup-sandbox" (old name)
 The **agent**'s persisted conversation record. Storage shape and location are owned by the **agent provider** -- Claude Code writes a `<session-id>.jsonl` under `~/.claude/projects/<encoded-cwd>/`; other agents use their own conventions (e.g. `~/.codex/sessions/`, `~/.pi/agent/sessions/`, OpenCode's SQLite store). Resumable when the **agent provider** declares session-storage support; the resume mechanism is the agent's native flag (e.g. `claude --resume`, `codex exec resume`, `pi --session`).
 _Avoid_: "chat history", "transcript"
 
+**Session resume**:
+A continuation of an existing **agent session** that _mutates_ the parent — the agent appends to the existing JSONL and reuses its session id. Exposed as `RunResult.resume(prompt, options?)`. One iteration only (see ADR 0011). Not safe for concurrent fan-out from the same parent: two `.resume()` calls against the same `RunResult` race to write the same JSONL.
+_Avoid_: "session continue" (too generic), "session replay" (implies re-running, not extending)
+
+**Session fork**:
+A continuation of an existing **agent session** that leaves the parent JSONL intact and writes the child under a new session id. Exposed as `RunResult.fork(prompt, options?)`, the sibling of `RunResult.resume`. One iteration only. The mechanism is the agent's native fork flag (`claude --fork-session`, `codex exec fork`). Isolates the **agent session** only -- not the **branch** or **sandbox**; safe concurrent fan-out requires the caller to give each fork a distinct **branch**. See ADR 0018.
+_Avoid_: "branch session" (ambiguous with git branch), "session clone" (implies a copy at rest, not a forward continuation)
+
 ### Display
 
 **Log-to-file mode**:
