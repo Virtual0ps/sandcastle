@@ -20,12 +20,14 @@ Explore the repo and relevant tests before editing.
 
 # EXECUTION
 
-Use red-green-refactor where applicable:
+Where a test seam already exists, or a new one is being proposed, do red-green-refactor:
 
 1. RED: write a failing test
 2. GREEN: implement the smallest correct change
 3. REPEAT until the issue is done
 4. REFACTOR
+
+Do not improvise new test seams, such as extracting out a function so that it can be tested in isolation. This creates spaghetti tests.
 
 Run `npm run typecheck` before committing. Run focused tests where relevant.
 

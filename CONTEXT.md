@@ -94,6 +94,14 @@ _Avoid_: "job", "work item", "ticket"
 The `<promise>COMPLETE</promise>` marker in the **agent**'s output indicating all actionable tasks are finished. A pure termination signal -- carries no payload. Distinct from **structured output**.
 _Avoid_: "done flag", "exit signal", conflating with **structured output**
 
+**Completion timeout**:
+The bounded window -- one minute of silence by default -- that Sandcastle waits after detecting the **completion signal** before it stops waiting for the **agent**'s process to exit and completes the **iteration** anyway. A clean process exit within the window completes normally; expiry completes the **iteration** _successfully_ but warns that the process is **hanging**. Parallel to the idle timeout, which instead _fails_ the **iteration** when no **completion signal** has been seen.
+_Avoid_: "completion grace window", "grace period", "drain timeout"
+
+**Hanging process**:
+The state where the **agent** has finished its turn -- emitted its final output, typically the **completion signal** -- but its process has not exited, usually because a child it spawned (a subprocess like `gh`, or an MCP server) holds the **sandbox** exec's stdout open so EOF never arrives. Resolved by the **completion timeout** rather than waiting out the full idle timeout.
+_Avoid_: "lingering process", "zombie process", "stuck agent" (implies stuck _mid-work_, not done-but-not-exited)
+
 **Structured output**:
 A schema-validated JSON payload emitted by the **agent** inside a caller-specified XML tag and returned to the caller of `run()`. Configured via `output: Output.object({ tag, schema })`. Orthogonal to the **completion signal** -- a run can use either, both, or neither. The caller owns the prompt-side instruction telling the agent to emit the tag; Sandcastle does not inject it, and `run()` errors early if the resolved prompt does not contain the configured tag.
 _Avoid_: "output payload", "result", "JSON output"
@@ -183,12 +191,12 @@ The **agent**'s persisted conversation record. Storage shape and location are ow
 _Avoid_: "chat history", "transcript"
 
 **Session resume**:
-A continuation of an existing **agent session** that _mutates_ the parent — the agent appends to the existing JSONL and reuses its session id. Exposed as `RunResult.resume(prompt, options?)`. One iteration only (see ADR 0011). Not safe for concurrent fan-out from the same parent: two `.resume()` calls against the same `RunResult` race to write the same JSONL.
-_Avoid_: "session continue" (too generic), "session replay" (implies re-running, not extending)
+Continuing an **agent session** by appending new turns to the same session record -- the session ID is unchanged and the prior record is mutated in place. Exposed as `RunResult.resume()`.
+_Avoid_: "continue", "follow-up"
 
 **Session fork**:
-A continuation of an existing **agent session** that leaves the parent JSONL intact and writes the child under a new session id. Exposed as `RunResult.fork(prompt, options?)`, the sibling of `RunResult.resume`. One iteration only. The mechanism is the agent's native fork flag (`claude --fork-session`, `codex exec fork`). Isolates the **agent session** only -- not the **branch** or **sandbox**; safe concurrent fan-out requires the caller to give each fork a distinct **branch**. See ADR 0018.
-_Avoid_: "branch session" (ambiguous with git branch), "session clone" (implies a copy at rest, not a forward continuation)
+Branching an **agent session** into a new record with a new session ID, leaving the parent record byte-for-byte unchanged. Uses the **agent**'s native fork flag (`claude --fork-session`, `codex exec fork`). Exposed as `RunResult.fork()`. Isolates the session only -- not the **source branch** or **sandbox**.
+_Avoid_: "branch" (overloaded with git branches), "copy session"
 
 ### Display
 
